@@ -12,30 +12,55 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
 
-# Check standard Linux locations explicitly if system wide lookup delays
-POSSIBLE_PATHS = [
-    shutil.which("stockfish"),
-    "/usr/games/stockfish",
-    "/usr/bin/stockfish",
-    "/usr/local/bin/stockfish"
-]
-
-STOCKFISH_PATH = next((path for path in POSSIBLE_PATHS if path and os.path.exists(path)), None)
+# Path where we will save our local engine binary
+STOCKFISH_PATH = os.path.join(os.getcwd(), "stockfish_bin")
 ENGINE = None
 
-if STOCKFISH_PATH:
+# =====================================================================
+# 1. PLACE THE DOWNLOAD FUNCTION RIGHT HERE
+# =====================================================================
+def download_stockfish():
+    """Automatically downloads a stable, pre-compiled Linux Stockfish binary if missing."""
+    if not os.path.exists(STOCKFISH_PATH):
+        print("Stockfish binary missing. Downloading Linux build automatically...")
+        try:
+            url = "https://github.com"
+            
+            response = requests.get(url, stream=True, timeout=30)
+            if response.status_code == 200:
+                with open(STOCKFISH_PATH, "wb") as f:
+                    shutil.copyfileobj(response.raw, f)
+                
+                # CRITICAL: Grant Linux execution permissions so Railway can run it
+                os.chmod(STOCKFISH_PATH, 0o755)
+                print("Stockfish downloaded and permissions set successfully!")
+            else:
+                print(f"Download failed with HTTP status code: {response.status_code}")
+                
+        except Exception as e:
+            print(f"Automated download failed: {e}")
+
+
+# =====================================================================
+# 2. RUN THE DOWNLOAD BEFORE INITIALIZING THE ENGINE
+# =====================================================================
+download_stockfish()
+
+
+if os.path.exists(STOCKFISH_PATH):
     try:
         print(f"SUCCESS: Initializing Stockfish from path: {STOCKFISH_PATH}")
         ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
     except Exception as e:
-        print(f"WARNING: Binary found but engine failed to load: {e}")
+        print(f"WARNING: Binary exists but engine failed to load: {e}")
 else:
-    print("WARNING: Stockfish binary missing. Activating Lichess Cloud API fallback engine.")
+    print("WARNING: Stockfish binary completely missing. Activating Lichess Cloud API fallback.")
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
 }
+
 
 def send_chat_message(game_id, room, text):
     """Sends a chat message to the opponent or spectator room."""
