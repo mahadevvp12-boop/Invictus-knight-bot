@@ -2,24 +2,26 @@ import threading
 import json
 import requests
 import os
-import random
-import time
-import chess  # Tracks real-time board positioning
-import chess.engine 
+import shutil
+import chess
+import chess.engine
+
 # --- CONFIGURATION ---
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
 
-# FIX FOR RAILWAY: Tries the standard Nixpacks location first, falls back to global path
-STOCKFISH_PATH = "/usr/bin/stockfish" if os.path.exists("/usr/bin/stockfish") else "stockfish"
+# Find where Nixpacks installed stockfish in the system path
+STOCKFISH_PATH = shutil.which("stockfish")
 
-# Start the engine ONCE globally so it stays warm and ready in memory
-try:
-    print(f"Initializing global Stockfish engine from: {STOCKFISH_PATH}")
-    ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-except Exception as e:
-    print(f"CRITICAL: Failed to initialize Stockfish: {e}")
-    ENGINE = None
+ENGINE = None
+if STOCKFISH_PATH:
+    try:
+        print(f"Initializing global Stockfish engine from discovered path: {STOCKFISH_PATH}")
+        ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+    except Exception as e:
+        print(f"CRITICAL: Found Stockfish binary but failed to open: {e}")
+else:
+    print("CRITICAL: 'stockfish' command not found in system PATH. Double-check your NIXPACKS_PKGS variable.")
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
