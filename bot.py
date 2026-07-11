@@ -2,6 +2,8 @@ import threading
 import json
 import requests
 import os
+import random
+import time
 import shutil
 import chess
 import chess.engine
@@ -10,18 +12,26 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
 
-# Find where Nixpacks installed stockfish in the system path
-STOCKFISH_PATH = shutil.which("stockfish")
+# Check standard Linux locations explicitly if system wide lookup delays
+POSSIBLE_PATHS = [
+    shutil.which("stockfish"),
+    "/usr/games/stockfish",
+    "/usr/bin/stockfish",
+    "/usr/local/bin/stockfish"
+]
 
+STOCKFISH_PATH = next((path for path in POSSIBLE_PATHS if path and os.path.exists(path)), None)
 ENGINE = None
+
 if STOCKFISH_PATH:
     try:
-        print(f"Initializing global Stockfish engine from discovered path: {STOCKFISH_PATH}")
+        print(f"SUCCESS: Initializing Stockfish from path: {STOCKFISH_PATH}")
         ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
     except Exception as e:
-        print(f"CRITICAL: Found Stockfish binary but failed to open: {e}")
+        print(f"WARNING: Binary found but engine failed to load: {e}")
 else:
-    print("CRITICAL: 'stockfish' command not found in system PATH. Double-check your NIXPACKS_PKGS variable.")
+    print("WARNING: Stockfish binary missing. Activating Lichess Cloud API fallback engine.")
+
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
