@@ -5,7 +5,7 @@ import os
 import random
 import time
 import chess  # Tracks real-time board positioning
-
+import chess.engine 
 # --- CONFIGURATION ---
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
