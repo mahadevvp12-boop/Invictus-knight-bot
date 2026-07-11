@@ -10,6 +10,16 @@ import chess  # Tracks real-time board positioning
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
 
+# Global system path for Stockfish on Railway
+STOCKFISH_PATH = "stockfish"
+
+# Start the engine ONCE globally so it stays warm and ready in memory
+try:
+    print("Initializing global Stockfish engine instance...")
+    ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+except Exception as e:
+    print(f"CRITICAL: Failed to initialize Stockfish: {e}")
+    ENGINE = None
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
