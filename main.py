@@ -56,7 +56,7 @@ def get_engine_move(moves_list):
     params = {"fen": current_fen, "multiPv": 3}
     
     # Prevents HTTP 425 Rate Limits
-    time.sleep(0.4) 
+    time.sleep(0.1) 
     
     try:
         response = requests.get(cloud_url, params=params)
