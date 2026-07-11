@@ -8,7 +8,7 @@ import chess  # Tracks real-time board positioning
 
 # --- CONFIGURATION ---
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
-BOT_USERNAME = "Studyloversz-bot"
+BOT_USERNAME = "Invictus-knight-bot"
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
