@@ -10,12 +10,12 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
 
-# Global system path for Stockfish on Railway
-STOCKFISH_PATH = "stockfish"
+# FIX FOR RAILWAY: Tries the standard Nixpacks location first, falls back to global path
+STOCKFISH_PATH = "/usr/bin/stockfish" if os.path.exists("/usr/bin/stockfish") else "stockfish"
 
 # Start the engine ONCE globally so it stays warm and ready in memory
 try:
-    print("Initializing global Stockfish engine instance...")
+    print(f"Initializing global Stockfish engine from: {STOCKFISH_PATH}")
     ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
 except Exception as e:
     print(f"CRITICAL: Failed to initialize Stockfish: {e}")
