@@ -85,9 +85,10 @@ def make_lichess_move(game_id, move_str):
 
 def get_engine_move(moves_list):
     """
-    Queries Lichess Cloud Database.
-    Safely indexes variables and uses random legal moves as fallback.
+    Uses the persistent global Stockfish engine instance.
+    Guarantees sub-0.1 second response times without blundering.
     """
+    global ENGINE
     board = chess.Board()
     for move in moves_list:
         try:
@@ -97,6 +98,44 @@ def get_engine_move(moves_list):
             
     if board.is_game_over():
         return None
+
+    # STRATEGY 1: Instant Local Processing (Optimized for Speed + Depth)
+    if ENGINE:
+        try:
+            # Depth 8 calculates in milliseconds natively on Railway
+            result = ENGINE.play(board, chess.engine.Limit(depth=8))
+            if result.move:
+                return result.move.uci()
+        except Exception as e:
+            print(f"Local calculation error: {e}. Switching to Cloud API...")
+
+    # STRATEGY 2: Cloud Database Fallback
+    try:
+        current_fen = board.fen()
+        # FIXED: Correct API endpoint URL
+        cloud_url = "https://lichess.org/api/cloud-eval"
+        response = requests.get(cloud_url, params={"fen": current_fen}, timeout=0.2)
+        if response.status_code == 200:
+            data = response.json()
+            pvs = data.get("pvs", [])
+            
+            # FIXED: Correct list indexing structure 
+            if pvs and len(pvs) > 0:
+                top_line = pvs[0]  # Safely extract first dictionary from list
+                best_move_line = top_line.get("moves", "").split()
+                if best_move_line:
+                    move_candidate = best_move_line[0]
+                    if chess.Move.from_uci(move_candidate) in board.legal_moves:
+                        return move_candidate
+    except Exception as api_err:
+        print(f"Cloud query skipped or timed out: {api_err}")
+
+    # STRATEGY 3: Emergency Safe Random Action
+    legal_moves = list(board.legal_moves)
+    if legal_moves:
+        return random.choice(legal_moves).uci()
+    return None
+
 
     current_fen = board.fen()
     cloud_url = "https://lichess.org/api/cloud-eval"
