@@ -1,0 +1,6 @@
+[providers]
+python = {}
+
+[phases.setup]
+# Forces Railway to install Stockfish directly via the standard Apt package manager
+aptPkgs = ["stockfish"]
