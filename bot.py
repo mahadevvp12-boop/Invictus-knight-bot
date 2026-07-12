@@ -4,63 +4,29 @@ import requests
 import os
 import random
 import time
-import shutil
-import chess
-import chess.engine
+import chess  
+import chess.variant  # REQUIRED: Handles variant rules and legal moves
 
 # --- CONFIGURATION ---
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = "Invictus-knight-bot"
-
-# Path where we will save our local engine binary
-STOCKFISH_PATH = os.path.join(os.getcwd(), "stockfish_bin")
-ENGINE = None
-
-# =====================================================================
-# 1. PLACE THE DOWNLOAD FUNCTION RIGHT HERE
-# =====================================================================
-def download_stockfish():
-    """Automatically downloads a stable, pre-compiled Linux Stockfish binary if missing."""
-    if not os.path.exists(STOCKFISH_PATH):
-        print("Stockfish binary missing. Downloading Linux build automatically...")
-        try:
-            url = "https://github.com"
-            
-            response = requests.get(url, stream=True, timeout=30)
-            if response.status_code == 200:
-                with open(STOCKFISH_PATH, "wb") as f:
-                    shutil.copyfileobj(response.raw, f)
-                
-                # CRITICAL: Grant Linux execution permissions so Railway can run it
-                os.chmod(STOCKFISH_PATH, 0o755)
-                print("Stockfish downloaded and permissions set successfully!")
-            else:
-                print(f"Download failed with HTTP status code: {response.status_code}")
-                
-        except Exception as e:
-            print(f"Automated download failed: {e}")
-
-
-# =====================================================================
-# 2. RUN THE DOWNLOAD BEFORE INITIALIZING THE ENGINE
-# =====================================================================
-download_stockfish()
-
-
-if os.path.exists(STOCKFISH_PATH):
-    try:
-        print(f"SUCCESS: Initializing Stockfish from path: {STOCKFISH_PATH}")
-        ENGINE = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-    except Exception as e:
-        print(f"WARNING: Binary exists but engine failed to load: {e}")
-else:
-    print("WARNING: Stockfish binary completely missing. Activating Lichess Cloud API fallback.")
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
 }
 
+# 1. Map Lichess variant keys to python-chess board classes
+VARIANT_MAP = {
+    'standard': chess.Board,
+    'atomic': chess.variant.AtomicBoard,
+    'crazyhouse': chess.variant.CrazyhouseBoard,
+    'antichess': chess.variant.AntichessBoard,
+    'horde': chess.variant.HordeBoard,
+    'kingOfTheHill': chess.variant.KingOfTheHillBoard,
+    'racingKings': chess.variant.RacingKingsBoard,
+    'threeCheck': chess.variant.ThreeCheckBoard
+}
 
 def send_chat_message(game_id, room, text):
     """Sends a chat message to the opponent or spectator room."""
@@ -83,13 +49,67 @@ def make_lichess_move(game_id, move_str):
     except Exception as e:
         print(f"[{game_id}] Error posting move: {e}")
 
-def get_engine_move(moves_list):
-    """
-    Uses the persistent global Stockfish engine instance.
-    Guarantees sub-0.1 second response times without blundering.
-    """
-    global ENGINE
-    board = chess.Board()
+# --- PIECE VALUES FOR EVALUATING VARIANT POSITIONS ---
+PIECE_VALUES = {
+    chess.PAWN: 100,
+    chess.KNIGHT: 320,
+    chess.BISHOP: 330,
+    chess.ROOK: 500,
+    chess.QUEEN: 900,
+    chess.KING: 20000
+}
+
+def evaluate_board(board):
+    """Evaluates the material balance of the board dynamically."""
+    if board.is_checkmate():
+        return -99999 if board.turn else 99999
+        
+    score = 0
+    for square in chess.SQUARES:
+        piece = board.piece_at(square)
+        if piece:
+            val = PIECE_VALUES.get(piece.piece_type, 0)
+            if piece.color == chess.WHITE:
+                score += val
+            else:
+                score -= val
+    return score
+
+def minimax(board, depth, alpha, beta, maximizing_player):
+    """Looks ahead 'depth' number of moves to find the safest, strongest line."""
+    if depth == 0 or board.is_game_over():
+        return evaluate_board(board)
+
+    legal_moves = list(board.legal_moves)
+    
+    if maximizing_player:
+        max_eval = -float('inf')
+        for move in legal_moves:
+            board.push(move)
+            evaluation = minimax(board, depth - 1, alpha, beta, False)
+            board.pop()
+            max_eval = max(max_eval, evaluation)
+            alpha = max(alpha, evaluation)
+            if beta <= alpha:
+                break  # Prune branch
+        return max_eval
+    else:
+        min_eval = float('inf')
+        for move in legal_moves:
+            board.push(move)
+            evaluation = minimax(board, depth - 1, alpha, beta, True)
+            board.pop()
+            min_eval = min(min_eval, evaluation)
+            beta = min(beta, evaluation)
+            if beta <= alpha:
+                break  # Prune branch
+        return min_eval
+
+def get_engine_move(moves_list, variant_key='standard'):
+    """Calculates tactical moves using lookahead depth for all variants."""
+    board_class = VARIANT_MAP.get(variant_key, chess.Board)
+    board = board_class()
+    
     for move in moves_list:
         try:
             board.push_uci(move)
@@ -99,85 +119,46 @@ def get_engine_move(moves_list):
     if board.is_game_over():
         return None
 
-    # STRATEGY 1: Instant Local Processing (Optimized for Speed + Depth)
-    if ENGINE:
-        try:
-            # Depth 8 calculates in milliseconds natively on Railway
-            result = ENGINE.play(board, chess.engine.Limit(depth=8))
-            if result.move:
-                return result.move.uci()
-        except Exception as e:
-            print(f"Local calculation error: {e}. Switching to Cloud API...")
+    # Fallback to Cloud Eval database for standard chess speed
+    if variant_key == 'standard':
+        # ... (Keep your existing cloud-eval API request blocks here) ...
+        pass
 
-    # STRATEGY 2: Cloud Database Fallback
-    try:
-        current_fen = board.fen()
-        # FIXED: Correct API endpoint URL
-        cloud_url = "https://lichess.org/api/cloud-eval"
-        response = requests.get(cloud_url, params={"fen": current_fen}, timeout=0.2)
-        if response.status_code == 200:
-            data = response.json()
-            pvs = data.get("pvs", [])
-            
-            # FIXED: Correct list indexing structure 
-            if pvs and len(pvs) > 0:
-                top_line = pvs[0]  # Safely extract first dictionary from list
-                best_move_line = top_line.get("moves", "").split()
-                if best_move_line:
-                    move_candidate = best_move_line[0]
-                    if chess.Move.from_uci(move_candidate) in board.legal_moves:
-                        return move_candidate
-    except Exception as api_err:
-        print(f"Cloud query skipped or timed out: {api_err}")
-
-    # STRATEGY 3: Emergency Safe Random Action
+    # --- SMART ENGINE CALCULATION FOR VARIANTS ---
     legal_moves = list(board.legal_moves)
-    if legal_moves:
-        return random.choice(legal_moves).uci()
-    return None
+    if not legal_moves:
+        return None
 
-
-    current_fen = board.fen()
-    cloud_url = "https://lichess.org/api/cloud-eval"
-    params = {"fen": current_fen, "multiPv": 3}
+    best_move = random.choice(legal_moves) # Default fallback
     
-    # Prevents HTTP 425 Rate Limits
-    time.sleep(0.1) 
+    # Depth 2 looks 2 ply ahead (your move + opponent response). 
+    # Do not set higher than 3 on free hosting or it will run out of time!
+    depth = 2 
     
-    try:
-        response = requests.get(cloud_url, params=params)
-        if response.status_code == 200:
-            data = response.json()
-            pvs = data.get("pvs", [])
-            
-            if pvs:
-                dice_roll = random.random()
-                if dice_roll > 0.85 and len(pvs) >= 3:
-                    chosen_pv = pvs[2]  # ~1800 Elo choice
-                elif dice_roll > 0.70 and len(pvs) >= 2:
-                    chosen_pv = pvs[1]  # ~2000 Elo choice
-                else:
-                    chosen_pv = pvs[0]  # Top line choice
-                    
-                best_move_line = chosen_pv.get("moves", "").split()
-                if best_move_line:
-                    move_candidate = best_move_line[0]
-                    # Verify legality before returning
-                    if chess.Move.from_uci(move_candidate) in board.legal_moves:
-                        return move_candidate
-    except Exception as e:
-        print(f"Cloud Engine API error: {e}")
+    if board.turn == chess.WHITE:
+        best_value = -float('inf')
+        for move in legal_moves:
+            board.push(move)
+            board_value = minimax(board, depth - 1, -float('inf'), float('inf'), False)
+            board.pop()
+            if board_value > best_value:
+                best_value = board_value
+                best_move = move
+    else:
+        best_value = float('inf')
+        for move in legal_moves:
+            board.push(move)
+            board_value = minimax(board, depth - 1, -float('inf'), float('inf'), True)
+            board.pop()
+            if board_value < best_value:
+                best_value = board_value
+                best_move = move
 
-    # Safe dynamic fallback instead of a broken hardcoded string
-    legal_moves = list(board.legal_moves)
-    if legal_moves:
-        return random.choice(legal_moves).uci()
-        
-    return None 
+    return best_move.uci()
 
-def play_game(game_id):
-    """Streams individual match events. Breaks loop when game ends."""
-    print(f"\n[GAME START] Thread spawned for game: {game_id}")
+def play_game(game_id, variant_key='standard'):
+    """Streams individual match events. Passes variant key down to the engine."""
+    print(f"\n[GAME START] Thread spawned for game: {game_id} ({variant_key})")
     url = f"https://lichess.org/api/bot/game/stream/{game_id}"
     
     try:
@@ -198,7 +179,6 @@ def play_game(game_id):
         except Exception:
             continue
 
-        # Stop thread if game status updates to finished/aborted/resigned
         if game_event.get('type') == 'gameState' and game_event.get('status') != 'started':
             print(f"[{game_id}] Match complete. Reason: {game_event.get('status')}")
             send_chat_message(game_id, "player", "Good game! Thanks for playing.")
@@ -213,7 +193,8 @@ def play_game(game_id):
                 break
                 
             if not sent_welcome:
-                send_chat_message(game_id, "player", "Hello! I am a Python bot simulating a 2000 Elo engine. Good luck!")
+                welcome_msg = f"Hello! I am playing {variant_key} chess. Good luck!"
+                send_chat_message(game_id, "player", welcome_msg)
                 sent_welcome = True
                 
         elif game_event.get('type') == 'gameState':
@@ -228,10 +209,10 @@ def play_game(game_id):
                       (total_moves % 2 != 0 and bot_color == 'black')
 
         if is_bot_turn:
-            # Simulate a realistic human thinking delay
             time.sleep(random.uniform(0.6, 1.8))
             
-            bot_move = get_engine_move(moves_played)
+            # Pass variant_key so the board generates the correct rules
+            bot_move = get_engine_move(moves_played, variant_key)
             if bot_move:
                 make_lichess_move(game_id, bot_move)
 
@@ -245,7 +226,6 @@ def listen_to_events():
     for line in response.iter_lines():
         if not line:
             continue
-            
         try:
             event = json.loads(line.decode('utf-8'))
         except Exception:
@@ -255,27 +235,35 @@ def listen_to_events():
             challenge_id = event['challenge']['id']
             variant = event['challenge']['variant']['key']
             
-            # Decline complex variants to avoid calculation crashes
-            if variant != 'standard':
-                print(f"[CHALLENGE] Declining variant '{variant}' for ID: {challenge_id}")
+            if variant not in VARIANT_MAP:
+                print(f"[CHALLENGE] Declining unsupported variant '{variant}' for ID: {challenge_id}")
                 requests.post(f"https://lichess.org/api/challenge/{challenge_id}/decline", headers=HEADERS)
                 continue
 
-            print(f"[CHALLENGE] Auto-accepting ID: {challenge_id}")
+            print(f"[CHALLENGE] Auto-accepting {variant} game. ID: {challenge_id}")
             accept_url = f"https://lichess.org/api/challenge/{challenge_id}/accept"
             requests.post(accept_url, headers=HEADERS)
 
         elif event.get('type') == 'gameStart':
             game_id = event['game']['id']
-            game_thread = threading.Thread(target=play_game, args=(game_id,))
+            game_variant = event['game'].get('variant', {}).get('key', 'standard')
+            game_thread = threading.Thread(target=play_game, args=(game_id, game_variant))
             game_thread.daemon = True
             game_thread.start()
 
+
+
+import traceback
+
 if __name__ == "__main__":
-    # Infinite outer recovery wrapper loop
     while True:
         try:
             listen_to_events()
         except Exception as global_err:
-            print(f"Network stream disconnected: {global_err}. Reconnecting in 10 seconds...")
+            print(f"\n CRASH DETECTED: {global_err}")
+            print("--- FULL ERROR TRACEBACK START ---")
+            traceback.print_exc()
+            print("--- FULL ERROR TRACEBACK END ---\n")
+            print("Reconnecting in 10 seconds...")
             time.sleep(10)
+          
