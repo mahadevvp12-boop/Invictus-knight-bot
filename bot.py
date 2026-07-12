@@ -7,9 +7,9 @@ import time
 import chess  
 import chess.variant  # REQUIRED: Handles variant rules and legal moves
 
-# --- CONFIGURATION ---
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
-BOT_USERNAME = "Invictus-knight-bot"
+# 🛠️ FIX: Reads the unique username dynamically from Railway
+BOT_USERNAME = os.environ.get("LICHESS_USERNAME", "Invictus-knight-bot")
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
@@ -27,6 +27,7 @@ VARIANT_MAP = {
     'racingKings': chess.variant.RacingKingsBoard,
     'threeCheck': chess.variant.ThreeCheckBoard
 }
+
 
 def send_chat_message(game_id, room, text):
     """Sends a chat message to the opponent or spectator room."""
