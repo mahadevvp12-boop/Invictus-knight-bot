@@ -32,7 +32,7 @@ def download_engines_if_missing():
         print("[SETUP] Downloading verified Standard Stockfish...")
         try:
             # ✅ DIRECT LINK ATTACHED: Downloads the true Linux tarball archive
-            subprocess.run("wget https://github.com -O stockfish.tar", shell=True, check=True)
+            subprocess.run("wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar -O stockfish.tar", shell=True, check=True)
             subprocess.run("tar -xf stockfish.tar --strip-components=1", shell=True, check=True)
             subprocess.run("mv stockfish-ubuntu-x86-64-avx2 ./stockfish", shell=True, check=True)
             subprocess.run("rm -f stockfish.tar", shell=True, check=True)
