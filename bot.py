@@ -188,13 +188,17 @@ def play_game(game_id, variant_key='standard'):
             if bot_move:
                 make_lichess_move(game_id, bot_move)
 
-# --- 7. GLOBAL EVENT LISTENER & MAIN BLOCK ---
 def listen_to_events():
     """Listens to global challenges and game starts."""
     print(f"Starting global event listener for user: {BOT_USERNAME}")
     url = "https://lichess.org/api/stream/event"
     
-    response = requests.get(url, headers=HEADERS, stream=True)
+    # ⏱️ Added a timeout parameter so the initial handshake doesn't hang indefinitely
+    response = requests.get(url, headers=HEADERS, stream=True, timeout=60)
+    
+    # 🚨 CRITICAL FIX: If Lichess returns a 401, 403, or 404, this forces a visible crash!
+    if response.status_code != 200:
+        raise Exception(f"Lichess Stream Connection Failed! HTTP Status Code: {response.status_code}. Response Content: {response.text}")
     
     for line in response.iter_lines():
         if not line:
@@ -223,15 +227,3 @@ def listen_to_events():
             game_thread = threading.Thread(target=play_game, args=(game_id, game_variant))
             game_thread.daemon = True
             game_thread.start()
-
-if __name__ == "__main__":
-    while True:
-        try:
-            listen_to_events()
-        except Exception as global_err:
-            print(f"\n CRASH DETECTED: {global_err}")
-            print("--- FULL ERROR TRACEBACK START ---")
-            traceback.print_exc()
-            print("--- FULL ERROR TRACEBACK END ---\n")
-            print("Reconnecting in 10 seconds...")
-            time.sleep(10)
