@@ -14,8 +14,9 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = os.environ.get("LICHESS_USERNAME", "Invictus-knight-bot")
 
-STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "./stockfish")
-FAIRY_STOCKFISH_PATH = os.environ.get("FAIRY_STOCKFISH_PATH", "./fairy-stockfish")
+STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "/usr/games/stockfish")
+FAIRY_STOCKFISH_PATH = os.environ.get("FAIRY_STOCKFISH_PATH", "/usr/games/fairy-stockfish")
+
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
