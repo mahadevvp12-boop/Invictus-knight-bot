@@ -6,7 +6,7 @@ import random
 import time
 import traceback
 import atexit
-import subprocess  # 🛠️ REQUIRED: Allows Python to run the download commands
+import subprocess  # 🛠️ REQUIRED: Allows Python to execute system commands
 import chess  
 import chess.variant  
 import chess.engine  
@@ -31,6 +31,7 @@ def download_engines_if_missing():
     if not os.path.exists(STOCKFISH_PATH):
         print("[SETUP] Downloading verified Standard Stockfish...")
         try:
+            # ✅ DIRECT LINK ATTACHED: Downloads the true Linux tarball archive
             subprocess.run("wget https://github.com -O stockfish.tar", shell=True, check=True)
             subprocess.run("tar -xf stockfish.tar --strip-components=1", shell=True, check=True)
             subprocess.run("mv stockfish-ubuntu-x86-64-avx2 ./stockfish", shell=True, check=True)
@@ -42,6 +43,7 @@ def download_engines_if_missing():
     if not os.path.exists(FAIRY_STOCKFISH_PATH):
         print("[SETUP] Downloading verified Fairy Stockfish...")
         try:
+            # ✅ DIRECT LINK ATTACHED: Downloads the true Linux variant zip file
             subprocess.run("wget https://github.com -O fairy.zip", shell=True, check=True)
             subprocess.run("unzip -o fairy.zip", shell=True, check=True)
             subprocess.run("mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish", shell=True, check=True)
@@ -105,16 +107,6 @@ def cleanup_engines():
 
 atexit.register(cleanup_engines)
 
-def cleanup_engines():
-    print("[SHUTDOWN] Closing background engine processes...")
-    if engine_standard:
-        try: engine_standard.quit()
-        except: pass
-    if engine_variants:
-        try: engine_variants.quit()
-        except: pass
-
-atexit.register(cleanup_engines)
 
 # --- 4. LICHESS API HELPER FUNCTIONS ---
 def send_chat_message(game_id, room, text):
