@@ -1,15 +1,14 @@
 providers = ["python"]
 
 [phases.setup]
-# 📦 Still using the safe, native Nix packages
-nixPkgs = ["python3", "stockfish", "fairy-stockfish"]
+# 🚨 CRITICAL FIX: The "..." item ensures Python is preserved and doesn't get wiped out!
+nixPkgs = ["...", "python3", "stockfish", "fairy-stockfish"]
 
 [phases.build]
 cmds = [
   "pip install -r requirements.txt",
-  # 🛠️ CRITICAL FIX: Locates the isolated Nix binary and copies it locally so Python can see it
+  # 🛠️ Now that paths are preserved, this successfully copies the binaries locally!
   "cp $(which stockfish) ./stockfish",
   "cp $(which fairy-stockfish) ./fairy-stockfish",
-  # 🔑 Grant full execute authorizations just to be safe
   "chmod +x ./stockfish ./fairy-stockfish"
 ]
