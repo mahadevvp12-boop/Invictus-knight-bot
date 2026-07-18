@@ -1,1 +1,1 @@
-worker: nixpacks build && python bot.py
+worker: python bot.py
