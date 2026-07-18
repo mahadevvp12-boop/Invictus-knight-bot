@@ -8,7 +8,7 @@ cmds = [
   "pip install -r requirements.txt",
   
   # 📥 Fetch and unpack Standard Stockfish 18
-  "wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar -O stockfish.tar",
+   "wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar -O stockfish.tar",
   "tar -xf stockfish.tar",
   # 🛠️ FIXED: Dynamically locates the inner file path and forces a clean move to the root
   "mv stockfish-18-ubuntu-x86-64-avx2/stockfish-18-ubuntu-x86-64-avx2 ./stockfish || mv stockfish-*/stockfish-*-ubuntu-x86-64-avx2 ./stockfish",
