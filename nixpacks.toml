@@ -1,23 +1,11 @@
 providers = ["python"]
 
 [phases.setup]
-nixPkgs = ["python3", "wget", "unzip"]
+# 📦 Native system packages fetch Stockfish and Fairy Stockfish directly via APT
+nixPkgs = ["python3"]
+aptPkgs = ["stockfish", "fairy-stockfish"]
 
 [phases.build]
 cmds = [
-  "pip install -r requirements.txt",
-  
-  # 📥 Fetch and unpack Standard Stockfish 18
-   "wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar -O stockfish.tar",
-  "tar -xf stockfish.tar",
-  # 🛠️ FIXED: Dynamically locates the inner file path and forces a clean move to the root
-  "mv stockfish-18-ubuntu-x86-64-avx2/stockfish-18-ubuntu-x86-64-avx2 ./stockfish || mv stockfish-*/stockfish-*-ubuntu-x86-64-avx2 ./stockfish",
-  
-  # 📥 Fetch and unpack Fairy Stockfish 14.1
-  "wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64.zip -O fairy.zip",
-  "unzip -o fairy.zip",
-  "mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish",
-  
-  # 🔑 Force execute permissions on both engine binaries
-  "chmod +x ./stockfish ./fairy-stockfish"
+  "pip install -r requirements.txt"
 ]
