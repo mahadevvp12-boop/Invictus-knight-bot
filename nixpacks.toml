@@ -1,0 +1,22 @@
+providers = ["python"]
+
+[phases.setup]
+nixPkgs = ["python3", "wget", "unzip"]
+
+[phases.build]
+cmds = [
+  "pip install -r requirements.txt",
+  
+  # 📥 Fetch and unpack Standard Stockfish 17 (Linux Ubuntu Build)
+ "wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64.tar -O stockfish.tar",
+  "tar -xf stockfish.tar",
+  "mv stockfish/stockfish-ubuntu-x86-64 ./stockfish",
+  
+  # 📥 Fetch and unpack Fairy Stockfish 14.1 (Standard 8x8 Lichess Variant Engine)
+"wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64.zip -O fairy.zip",
+  "unzip -o fairy.zip",
+  "mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish",
+  
+  # 🔑 Force execute permissions on both engine binaries
+  "chmod +x ./stockfish ./fairy-stockfish"
+]
