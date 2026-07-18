@@ -6,7 +6,6 @@ import random
 import time
 import traceback
 import atexit
-import subprocess  # 🛠️ REQUIRED: Allows Python to execute system commands
 import chess  
 import chess.variant  
 import chess.engine  
@@ -15,7 +14,7 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = os.environ.get("LICHESS_USERNAME", "Invictus-knight-bot")
 
-# Force paths to local folder names where the script will download them
+# Natively point directly to the local folder files created by your Docker build
 STOCKFISH_PATH = "./stockfish"
 FAIRY_STOCKFISH_PATH = "./fairy-stockfish"
 
@@ -23,6 +22,54 @@ HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
 }
+
+# --- 2. MAPS & CONCURRENCY LOCKS ---
+VARIANT_MAP = {
+    'standard': chess.Board,
+    'atomic': chess.variant.AtomicBoard,
+    'crazyhouse': chess.variant.CrazyhouseBoard,
+    'antichess': chess.variant.AntichessBoard,
+    'horde': chess.variant.HordeBoard,
+    'kingOfTheHill': chess.variant.KingOfTheHillBoard,
+    'racingKings': chess.variant.RacingKingsBoard,
+    'threeCheck': chess.variant.ThreeCheckBoard
+}
+
+UCI_VARIANT_MAP = {
+    'atomic': 'atomic',
+    'crazyhouse': 'crazyhouse',
+    'antichess': 'antichess',
+    'horde': 'horde',
+    'kingOfTheHill': 'kingofthehill',
+    'racingKings': 'racingkings',
+    'threeCheck': '3check'
+}
+
+lock_standard = threading.Lock()
+lock_variants = threading.Lock()
+
+# --- 3. PERSISTENT ENGINE INITIALIZATION ---
+try:
+    print("Initializing Stockfish processes...")
+    engine_standard = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+    engine_variants = chess.engine.SimpleEngine.popen_uci(FAIRY_STOCKFISH_PATH)
+except Exception as init_err:
+    print(f"CRITICAL: Failed to load engine binaries. Error: {init_err}")
+    engine_standard = None
+    engine_variants = None
+
+def cleanup_engines():
+    print("[SHUTDOWN] Closing background engine processes...")
+    if engine_standard:
+        try: engine_standard.quit()
+        except: pass
+    if engine_variants:
+        try: engine_variants.quit()
+        except: pass
+
+atexit.register(cleanup_engines)
+
+# ... (The rest of your bot.py code remains the exact same underneath this) ...
 
 # --- 2. SELF-HEALING RUNTIME DOWNLOADER ---
 def download_engines_if_missing():
@@ -96,16 +143,6 @@ except Exception as init_err:
     engine_standard = None
     engine_variants = None
 
-def cleanup_engines():
-    print("[SHUTDOWN] Closing background engine processes...")
-    if engine_standard:
-        try: engine_standard.quit()
-        except: pass
-    if engine_variants:
-        try: engine_variants.quit()
-        except: pass
-
-atexit.register(cleanup_engines)
 
 
 # --- 4. LICHESS API HELPER FUNCTIONS ---
