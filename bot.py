@@ -44,7 +44,7 @@ def download_engines_if_missing():
         print("[SETUP] Downloading verified Fairy Stockfish...")
         try:
             # ✅ DIRECT LINK ATTACHED: Downloads the true Linux variant zip file
-            subprocess.run("wget https://github.com -O fairy.zip", shell=True, check=True)
+            subprocess.run("wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64.zip -O fairy.zip", shell=True, check=True)
             subprocess.run("unzip -o fairy.zip", shell=True, check=True)
             subprocess.run("mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish", shell=True, check=True)
             subprocess.run("rm -f fairy.zip", shell=True, check=True)
