@@ -6,6 +6,7 @@ import random
 import time
 import traceback
 import atexit
+import subprocess  # 🛠️ REQUIRED: Allows Python to run the download commands
 import chess  
 import chess.variant  
 import chess.engine  
@@ -14,16 +15,51 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = os.environ.get("LICHESS_USERNAME", "Invictus-knight-bot")
 
-# 📂 FIXED: Calls the system-wide installed engines directly by name
-STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "./stockfish")
-FAIRY_STOCKFISH_PATH = os.environ.get("FAIRY_STOCKFISH_PATH", "./fairy-stockfish")
+# Force paths to local folder names where the script will download them
+STOCKFISH_PATH = "./stockfish"
+FAIRY_STOCKFISH_PATH = "./fairy-stockfish"
 
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}",
     "Content-Type": "application/json"
 }
 
-# --- 2. MAPS & CONCURRENCY LOCKS ---
+# --- 2. SELF-HEALING RUNTIME DOWNLOADER ---
+def download_engines_if_missing():
+    """Guarantees both chess binaries exist and are fully executable on Railway."""
+    # 1. Handle Standard Stockfish
+    if not os.path.exists(STOCKFISH_PATH):
+        print("[SETUP] Downloading verified Standard Stockfish...")
+        try:
+            subprocess.run("wget https://github.com -O stockfish.tar", shell=True, check=True)
+            subprocess.run("tar -xf stockfish.tar --strip-components=1", shell=True, check=True)
+            subprocess.run("mv stockfish-ubuntu-x86-64-avx2 ./stockfish", shell=True, check=True)
+            subprocess.run("rm -f stockfish.tar", shell=True, check=True)
+        except Exception as e:
+            print(f"[SETUP ERROR] Stockfish download failed: {e}")
+
+    # 2. Handle Fairy Stockfish
+    if not os.path.exists(FAIRY_STOCKFISH_PATH):
+        print("[SETUP] Downloading verified Fairy Stockfish...")
+        try:
+            subprocess.run("wget https://github.com -O fairy.zip", shell=True, check=True)
+            subprocess.run("unzip -o fairy.zip", shell=True, check=True)
+            subprocess.run("mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish", shell=True, check=True)
+            subprocess.run("rm -f fairy.zip", shell=True, check=True)
+        except Exception as e:
+            print(f"[SETUP ERROR] Fairy Stockfish download failed: {e}")
+
+    # 3. Force execution rights
+    try:
+        subprocess.run("chmod +x ./stockfish ./fairy-stockfish", shell=True, check=True)
+        print("[SETUP] Binary file verifications complete.")
+    except Exception as e:
+        print(f"[SETUP ERROR] Failed to assign executable rights: {e}")
+
+# 🔥 RUN THE DOWNLOADER BEFORE OPENING ENGINE CONNECTIONS
+download_engines_if_missing()
+
+# --- 3. MAPS & CONCURRENCY LOCKS ---
 VARIANT_MAP = {
     'standard': chess.Board,
     'atomic': chess.variant.AtomicBoard,
@@ -48,7 +84,7 @@ UCI_VARIANT_MAP = {
 lock_standard = threading.Lock()
 lock_variants = threading.Lock()
 
-# --- 3. PERSISTENT ENGINE INITIALIZATION ---
+# --- 4. PERSISTENT ENGINE INITIALIZATION ---
 try:
     print("Initializing Stockfish processes...")
     engine_standard = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
@@ -57,6 +93,17 @@ except Exception as init_err:
     print(f"CRITICAL: Failed to load engine binaries. Error: {init_err}")
     engine_standard = None
     engine_variants = None
+
+def cleanup_engines():
+    print("[SHUTDOWN] Closing background engine processes...")
+    if engine_standard:
+        try: engine_standard.quit()
+        except: pass
+    if engine_variants:
+        try: engine_variants.quit()
+        except: pass
+
+atexit.register(cleanup_engines)
 
 def cleanup_engines():
     print("[SHUTDOWN] Closing background engine processes...")
