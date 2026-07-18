@@ -1,0 +1,10 @@
+providers = ["python"]
+
+[phases.setup]
+# 📦 Installs wget and unzip so Python subprocess calls work perfectly
+nixPkgs = ["...", "python3", "wget", "unzip"]
+
+[phases.build]
+cmds = [
+  "pip install -r requirements.txt"
+]
