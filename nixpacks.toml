@@ -7,13 +7,13 @@ nixPkgs = ["python3", "wget", "unzip"]
 cmds = [
   "pip install -r requirements.txt",
   
-  # 📥 Fetch and unpack Standard Stockfish (Optimized AVX2 Linux Build)
+  # 📥 Fetch and unpack Standard Stockfish 18
   "wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar -O stockfish.tar",
   "tar -xf stockfish.tar",
-  # 🛠️ FIX: Targets the exact avx2 executable name inside the extracted version folder
-  "mv stockfish-*/stockfish-ubuntu-x86-64-avx2 ./stockfish",
+  # 🛠️ FIXED: Dynamically locates the inner file path and forces a clean move to the root
+  "mv stockfish-18-ubuntu-x86-64-avx2/stockfish-18-ubuntu-x86-64-avx2 ./stockfish || mv stockfish-*/stockfish-*-ubuntu-x86-64-avx2 ./stockfish",
   
-  # 📥 Fetch and unpack Fairy Stockfish 14.1 (Standard 8x8 Lichess Variant Engine)
+  # 📥 Fetch and unpack Fairy Stockfish 14.1
   "wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64.zip -O fairy.zip",
   "unzip -o fairy.zip",
   "mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish",
