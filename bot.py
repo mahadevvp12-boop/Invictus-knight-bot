@@ -6,6 +6,7 @@ import random
 import time
 import traceback
 import atexit
+import subprocess  # ✅ REQUIRED FOR DOWNLOADER
 import chess  
 import chess.variant  
 import chess.engine  
@@ -14,7 +15,6 @@ import chess.engine
 TOKEN = os.environ.get("LICHESS_TOKEN", "YOUR_SECRET_TOKEN_HERE")
 BOT_USERNAME = os.environ.get("LICHESS_USERNAME", "Invictus-knight-bot")
 
-# Natively point directly to the local folder files created by your Docker build
 STOCKFISH_PATH = "./stockfish"
 FAIRY_STOCKFISH_PATH = "./fairy-stockfish"
 
@@ -23,92 +23,44 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-# --- 2. MAPS & CONCURRENCY LOCKS ---
-VARIANT_MAP = {
-    'standard': chess.Board,
-    'atomic': chess.variant.AtomicBoard,
-    'crazyhouse': chess.variant.CrazyhouseBoard,
-    'antichess': chess.variant.AntichessBoard,
-    'horde': chess.variant.HordeBoard,
-    'kingOfTheHill': chess.variant.KingOfTheHillBoard,
-    'racingKings': chess.variant.RacingKingsBoard,
-    'threeCheck': chess.variant.ThreeCheckBoard
-}
-
-UCI_VARIANT_MAP = {
-    'atomic': 'atomic',
-    'crazyhouse': 'crazyhouse',
-    'antichess': 'antichess',
-    'horde': 'horde',
-    'kingOfTheHill': 'kingofthehill',
-    'racingKings': 'racingkings',
-    'threeCheck': '3check'
-}
-
-lock_standard = threading.Lock()
-lock_variants = threading.Lock()
-
-# --- 3. PERSISTENT ENGINE INITIALIZATION ---
-try:
-    print("Initializing Stockfish processes...")
-    engine_standard = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-    engine_variants = chess.engine.SimpleEngine.popen_uci(FAIRY_STOCKFISH_PATH)
-except Exception as init_err:
-    print(f"CRITICAL: Failed to load engine binaries. Error: {init_err}")
-    engine_standard = None
-    engine_variants = None
-
-def cleanup_engines():
-    print("[SHUTDOWN] Closing background engine processes...")
-    if engine_standard:
-        try: engine_standard.quit()
-        except: pass
-    if engine_variants:
-        try: engine_variants.quit()
-        except: pass
-
-atexit.register(cleanup_engines)
-
-# ... (The rest of your bot.py code remains the exact same underneath this) ...
-
-# --- 2. SELF-HEALING RUNTIME DOWNLOADER ---
+# --- 2. ENGINE DOWNLOADER (RUN BEFORE ENGINE INIT) ---
 def download_engines_if_missing():
     """Guarantees both chess binaries exist and are fully executable on Railway."""
     # 1. Handle Standard Stockfish
     if not os.path.exists(STOCKFISH_PATH):
         print("[SETUP] Downloading verified Standard Stockfish...")
         try:
-            # ✅ DIRECT LINK ATTACHED: Downloads the true Linux tarball archive
-            subprocess.run("wget https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar -O stockfish.tar", shell=True, check=True)
-            subprocess.run("tar -xf stockfish.tar --strip-components=1", shell=True, check=True)
-            subprocess.run("mv stockfish-ubuntu-x86-64-avx2 ./stockfish", shell=True, check=True)
-            subprocess.run("rm -f stockfish.tar", shell=True, check=True)
+            # Direct binary download (no tar extraction needed)
+            subprocess.run("wget https://github.com/official-stockfish/Stockfish/releases/download/stockfish-15.1/stockfish-ubuntu-x86-64-avx2 -O stockfish", shell=True, check=True)
+            subprocess.run("chmod +x ./stockfish", shell=True, check=True)
+            print("[SETUP] Standard Stockfish ready.")
         except Exception as e:
             print(f"[SETUP ERROR] Stockfish download failed: {e}")
+            return False
 
     # 2. Handle Fairy Stockfish
     if not os.path.exists(FAIRY_STOCKFISH_PATH):
         print("[SETUP] Downloading verified Fairy Stockfish...")
         try:
-            # ✅ DIRECT LINK ATTACHED: Downloads the true Linux variant zip file
-            subprocess.run("wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64.zip -O fairy.zip", shell=True, check=True)
-            subprocess.run("unzip -o fairy.zip", shell=True, check=True)
-            subprocess.run("mv fairy-stockfish-large-linux-x86-64 ./fairy-stockfish", shell=True, check=True)
-            subprocess.run("rm -f fairy.zip", shell=True, check=True)
+            # Direct binary download (no zip extraction needed)
+            subprocess.run("wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64 -O fairy-stockfish", shell=True, check=True)
+            subprocess.run("chmod +x ./fairy-stockfish", shell=True, check=True)
+            print("[SETUP] Fairy Stockfish ready.")
         except Exception as e:
             print(f"[SETUP ERROR] Fairy Stockfish download failed: {e}")
+            return False
+    
+    return True
 
-    # 3. Force execution rights
-    try:
-        subprocess.run("chmod +x ./stockfish ./fairy-stockfish", shell=True, check=True)
-        print("[SETUP] Binary file verifications complete.")
-    except Exception as e:
-        print(f"[SETUP ERROR] Failed to assign executable rights: {e}")
+# ✅ RUN DOWNLOADER BEFORE ENGINE INITIALIZATION
+if not download_engines_if_missing():
+    print("[CRITICAL] Engine setup failed. Exiting.")
+    exit(1)
 
-# 🔥 RUN THE DOWNLOADER BEFORE OPENING ENGINE CONNECTIONS
-download_engines_if_missing()
+# --- 3. GLOBAL STATE & CONFIGURATION ---
+engine_standard = None
+engine_variants = None
 
-# --- 3. MAPS & CONCURRENCY LOCKS ---
 VARIANT_MAP = {
     'standard': chess.Board,
     'atomic': chess.variant.AtomicBoard,
@@ -133,25 +85,44 @@ UCI_VARIANT_MAP = {
 lock_standard = threading.Lock()
 lock_variants = threading.Lock()
 
-# --- 4. PERSISTENT ENGINE INITIALIZATION ---
-try:
-    print("Initializing Stockfish processes...")
-    engine_standard = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
-    engine_variants = chess.engine.SimpleEngine.popen_uci(FAIRY_STOCKFISH_PATH)
-except Exception as init_err:
-    print(f"CRITICAL: Failed to load engine binaries. Error: {init_err}")
-    engine_standard = None
-    engine_variants = None
+# --- 4. ENGINE INITIALIZATION & CLEANUP ---
+def init_engines():
+    """Initialize chess engines with error handling."""
+    global engine_standard, engine_variants
+    try:
+        print("Initializing Stockfish processes...")
+        engine_standard = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
+        engine_variants = chess.engine.SimpleEngine.popen_uci(FAIRY_STOCKFISH_PATH)
+        print("[SUCCESS] Both engines initialized.")
+    except Exception as init_err:
+        print(f"[CRITICAL] Failed to load engine binaries. Error: {init_err}")
+        engine_standard = None
+        engine_variants = None
 
+def cleanup_engines():
+    """Cleanup: Close background engine processes on shutdown."""
+    print("[SHUTDOWN] Closing background engine processes...")
+    if engine_standard:
+        try:
+            engine_standard.quit()
+        except:
+            pass
+    if engine_variants:
+        try:
+            engine_variants.quit()
+        except:
+            pass
 
+init_engines()
+atexit.register(cleanup_engines)
 
-# --- 4. LICHESS API HELPER FUNCTIONS ---
+# --- 5. LICHESS API HELPER FUNCTIONS ---
 def send_chat_message(game_id, room, text):
     """Sends a chat message to the opponent or spectator room."""
     url = f"https://lichess.org/api/bot/game/{game_id}/chat"
     data = {"room": room, "text": text}
     try:
-        requests.post(url, headers=HEADERS, json=data)
+        requests.post(url, headers=HEADERS, json=data, timeout=10)
     except Exception as e:
         print(f"[{game_id}] Failed to send chat: {e}")
 
@@ -159,7 +130,7 @@ def make_lichess_move(game_id, move_str):
     """Sends the calculated move back to Lichess."""
     url = f"https://lichess.org/api/bot/game/{game_id}/move/{move_str}"
     try:
-        response = requests.post(url, headers=HEADERS)
+        response = requests.post(url, headers=HEADERS, timeout=10)
         if response.status_code == 200:
             print(f"[{game_id}] Played move: {move_str}")
         else:
@@ -167,7 +138,7 @@ def make_lichess_move(game_id, move_str):
     except Exception as e:
         print(f"[{game_id}] Error posting move: {e}")
 
-# --- 5. TACTICAL ENGINE ENGINE CALCULATION ---
+# --- 6. TACTICAL ENGINE CALCULATION ---
 def get_engine_move(moves_list, variant_key='standard'):
     """Calculates tactical moves safely across multiple simultaneous game threads."""
     board_class = VARIANT_MAP.get(variant_key, chess.Board)
@@ -206,20 +177,21 @@ def get_engine_move(moves_list, variant_key='standard'):
         
     return random.choice(list(board.legal_moves)).uci()
 
-# --- 6. INDIVIDUAL MATCH STREAMING LOOP ---
+# --- 7. INDIVIDUAL MATCH STREAMING LOOP ---
 def play_game(game_id, variant_key='standard'):
     """Streams individual match events. Passes variant key down to the engine."""
     print(f"\n[GAME START] Thread spawned for game: {game_id} ({variant_key})")
     url = f"https://lichess.org/api/bot/game/stream/{game_id}"
     
     try:
-        response = requests.get(url, headers=HEADERS, stream=True)
+        response = requests.get(url, headers=HEADERS, stream=True, timeout=60)
     except Exception as e:
         print(f"[{game_id}] Stream connection failed: {e}")
         return
         
     bot_color = None
     sent_welcome = False
+    state = {}  # ✅ INITIALIZE: Prevents KeyError on first gameState
 
     for line in response.iter_lines():
         if not line:
@@ -253,7 +225,7 @@ def play_game(game_id, variant_key='standard'):
         else:
             continue
 
-        moves_played = state['moves'].strip().split() if state['moves'].strip() else []
+        moves_played = state['moves'].strip().split() if state.get('moves', '').strip() else []
         total_moves = len(moves_played)
 
         is_bot_turn = (total_moves % 2 == 0 and bot_color == 'white') or \
@@ -270,10 +242,12 @@ def listen_to_events():
     print(f"Starting global event listener for user: {BOT_USERNAME}")
     url = "https://lichess.org/api/stream/event"
     
-    # ⏱️ Added a timeout parameter so the initial handshake doesn't hang indefinitely
-    response = requests.get(url, headers=HEADERS, stream=True, timeout=60)
+    try:
+        response = requests.get(url, headers=HEADERS, stream=True, timeout=60)
+    except Exception as e:
+        print(f"[CRITICAL] Event stream connection failed: {e}")
+        return
     
-    # 🚨 CRITICAL FIX: If Lichess returns a 401, 403, or 404, this forces a visible crash!
     if response.status_code != 200:
         raise Exception(f"Lichess Stream Connection Failed! HTTP Status Code: {response.status_code}. Response Content: {response.text}")
     
@@ -291,12 +265,12 @@ def listen_to_events():
             
             if variant not in VARIANT_MAP:
                 print(f"[CHALLENGE] Declining unsupported variant '{variant}' for ID: {challenge_id}")
-                requests.post(f"https://lichess.org/api/bot/challenge/{challenge_id}/decline", headers=HEADERS, json={"reason": "variant"})
+                requests.post(f"https://lichess.org/api/bot/challenge/{challenge_id}/decline", headers=HEADERS, json={"reason": "variant"}, timeout=10)
                 continue
 
             print(f"[CHALLENGE] Auto-accepting {variant} game. ID: {challenge_id}")
             accept_url = f"https://lichess.org/api/bot/challenge/{challenge_id}/accept"
-            requests.post(accept_url, headers=HEADERS)
+            requests.post(accept_url, headers=HEADERS, timeout=10)
 
         elif event.get('type') == 'gameStart':
             game_id = event['game']['id']
@@ -304,3 +278,15 @@ def listen_to_events():
             game_thread = threading.Thread(target=play_game, args=(game_id, game_variant))
             game_thread.daemon = True
             game_thread.start()
+
+# --- 8. MAIN ENTRY POINT ---
+if __name__ == "__main__":
+    try:
+        listen_to_events()
+    except KeyboardInterrupt:
+        print("\n[SHUTDOWN] Received shutdown signal.")
+        cleanup_engines()
+    except Exception as e:
+        print(f"[FATAL] {e}")
+        traceback.print_exc()
+        cleanup_engines()
