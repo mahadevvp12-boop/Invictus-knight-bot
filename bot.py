@@ -57,10 +57,10 @@ def download_engines_if_missing():
               "If you're running on another OS, provide compatible engine binaries in the repo.")
         # Continue — user may have provided binaries manually.
 
-    # 1. Standard Stockfish
+    # 1. Standard Stockfish 18
     if not os.path.exists(STOCKFISH_PATH):
         print("[SETUP] stockfish binary not found; attempting to download...")
-        stockfish_url = "https://github.com/official-stockfish/Stockfish/releases/download/stockfish-15.1/stockfish-ubuntu-x86-64-avx2"
+        stockfish_url = "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2"
         if not _download_file(stockfish_url, STOCKFISH_PATH):
             print("[SETUP ERROR] Standard Stockfish download failed.")
             return False
@@ -109,8 +109,6 @@ UCI_VARIANT_MAP = {
 
 lock_standard = threading.Lock()
 lock_variants = threading.Lock()
-active_games = {}
-active_games_lock = threading.Lock()
 
 # --- 4. ENGINE INITIALIZATION & CLEANUP ---
 def init_engines():
@@ -126,13 +124,13 @@ def init_engines():
             # engine.options is usually a dict-like mapping
             opts = engine_variants.options
             for opt_name in opts:
-                if opt_name.lower() == 'uci_variant':
+                if 'variant' in opt_name.lower() or 'uci_variant' in opt_name.lower():
                     VARIANT_OPTION_NAME = opt_name
                     break
             if VARIANT_OPTION_NAME:
                 print(f"[INIT] Detected engine variant option name: {VARIANT_OPTION_NAME}")
             else:
-                print("[INIT] No UCI_Variant option detected on engine; will attempt known key if needed.")
+                print("[INIT] No variant option name detected on engine; will attempt known key if needed.")
         except Exception:
             print("[INIT] Could not inspect engine options for variant support.")
 
@@ -145,17 +143,6 @@ def init_engines():
 
 def cleanup_engines():
     """Cleanup: Close background engine processes on shutdown."""
-    print("[SHUTDOWN] Waiting for active games to complete...")
-    # Wait for all game threads to complete gracefully
-    with active_games_lock:
-        for game_id, thread in list(active_games.items()):
-            try:
-                thread.join(timeout=5)
-                if thread.is_alive():
-                    print(f"[SHUTDOWN] Game {game_id} thread did not complete in time.")
-            except Exception:
-                pass
-    
     print("[SHUTDOWN] Closing background engine processes...")
     if engine_standard:
         try:
@@ -167,21 +154,6 @@ def cleanup_engines():
             engine_variants.quit()
         except Exception:
             pass
-
-def validate_bot_credentials():
-    """Validate bot credentials before starting the event listener."""
-    try:
-        response = requests.get("https://lichess.org/api/account", headers=HEADERS, timeout=5)
-        if response.status_code == 200:
-            account_info = response.json()
-            print(f"[CREDENTIALS] Bot authenticated as: {account_info.get('username', 'Unknown')}")
-            return True
-        else:
-            print(f"[CRITICAL] Invalid LICHESS_TOKEN or account. Status: {response.status_code}")
-            return False
-    except Exception as e:
-        print(f"[CRITICAL] Credential validation failed: {e}")
-        return False
 
 init_engines()
 atexit.register(cleanup_engines)
@@ -218,16 +190,10 @@ def get_engine_move(moves_list, variant_key='standard'):
     for move in moves_list:
         try:
             board.push_uci(move)
-        except ValueError:
-            print(f"[ENGINE] Invalid move notation in history: {move}")
-            # Continue with what we have; board state may diverge
-        except Exception as e:
-            print(f"[ENGINE] Unexpected error pushing move {move}: {e}")
+        except Exception:
+            pass
 
-    # Cache legal moves to avoid recalculating
-    legal_moves = list(board.legal_moves)
-    
-    if board.is_game_over() or not legal_moves:
+    if board.is_game_over() or not list(board.legal_moves):
         return None
 
     is_standard = (variant_key == 'standard')
@@ -236,35 +202,39 @@ def get_engine_move(moves_list, variant_key='standard'):
 
     if engine is None:
         print("[WARNING] Engines uninitialized, playing random move.")
-        return random.choice(legal_moves).uci()
+        return random.choice(list(board.legal_moves)).uci()
 
     with lock:
         try:
             if not is_standard:
-                # Configure variant mode for the engine
+                # Prefer discovered option name but fall back to known key
                 uci_variant_name = UCI_VARIANT_MAP.get(variant_key)
-                if uci_variant_name:
+                if VARIANT_OPTION_NAME and uci_variant_name:
                     try:
-                        if VARIANT_OPTION_NAME:
-                            engine.configure({VARIANT_OPTION_NAME: uci_variant_name})
-                        else:
-                            engine.configure({"UCI_Variant": uci_variant_name})
+                        engine.configure({VARIANT_OPTION_NAME: uci_variant_name})
                     except Exception as e:
-                        print(f"[ENGINE CONFIG] Failed to set variant {variant_key}: {e}")
-                        # Continue anyway; engine may still work in standard mode
+                        print(f"[ENGINE CONFIG] Failed to set {VARIANT_OPTION_NAME}: {e}")
+                        # attempt fallback
+                        try:
+                            engine.configure({"UCI_Variant": uci_variant_name})
+                        except Exception:
+                            pass
+                elif uci_variant_name:
+                    try:
+                        engine.configure({"UCI_Variant": uci_variant_name})
+                    except Exception as e:
+                        print(f"[ENGINE CONFIG] Failed to set UCI_Variant: {e}")
 
             # Keep thinking time small but safe; adjust as desired
             result = engine.play(board, chess.engine.Limit(time=0.1))
             if result.move:
                 return result.move.uci()
-            else:
-                print(f"[ENGINE] No move returned for {variant_key}")
-                return random.choice(legal_moves).uci() if legal_moves else None
 
         except Exception as e:
             print(f"[ENGINE ERROR] Dynamic calculation failed for {variant_key}: {e}")
             traceback.print_exc()
-            return random.choice(legal_moves).uci() if legal_moves else None
+
+    return random.choice(list(board.legal_moves)).uci()
 
 # --- 7. INDIVIDUAL MATCH STREAMING LOOP ---
 def play_game(game_id, variant_key='standard'):
@@ -330,16 +300,9 @@ def play_game(game_id, variant_key='standard'):
                 bot_move = get_engine_move(moves_played, variant_key)
                 if bot_move:
                     make_lichess_move(game_id, bot_move)
-                else:
-                    print(f"[{game_id}] No legal move available (game over?).")
-                    
     except Exception as e:
         print(f"[{game_id}] Error while streaming game events: {e}")
         traceback.print_exc()
-    finally:
-        # Clean up game tracking
-        with active_games_lock:
-            active_games.pop(game_id, None)
 
 
 def listen_to_events():
@@ -397,11 +360,9 @@ def listen_to_events():
                 elif event.get('type') == 'gameStart':
                     game_id = event['game']['id']
                     game_variant = event['game'].get('variant', {}).get('key', 'standard')
-                    game_thread = threading.Thread(target=play_game, args=(game_id, game_variant), daemon=False)
+                    game_thread = threading.Thread(target=play_game, args=(game_id, game_variant))
+                    game_thread.daemon = True
                     game_thread.start()
-                    # Track the game thread for graceful shutdown
-                    with active_games_lock:
-                        active_games[game_id] = game_thread
 
         except Exception as e:
             print(f"[EVENT STREAM] Error: {e}")
@@ -412,12 +373,6 @@ def listen_to_events():
 # --- 8. MAIN ENTRY POINT ---
 if __name__ == "__main__":
     try:
-        # Validate credentials before starting
-        if not validate_bot_credentials():
-            print("[CRITICAL] Credential validation failed. Exiting.")
-            cleanup_engines()
-            exit(1)
-        
         listen_to_events()
     except KeyboardInterrupt:
         print("\n[SHUTDOWN] Received shutdown signal.")
