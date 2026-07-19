@@ -10,12 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # 📂 Set up the app workspace directory
 WORKDIR /app
 
-# 📥 Download, unpack, and configure Standard Stockfish 18
-# 🛠️ FIXED: Replaced the broken generic GitHub URL with the valid binary release asset path
-RUN wget https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar.gz -O stockfish.tar.gz
+# 📥 Download, unpack, and configure Standard Stockfish 15.1
+RUN wget https://github.com/official-stockfish/Stockfish/releases/download/stockfish-15.1/stockfish-ubuntu-x86-64-avx2.tar.gz -O stockfish.tar.gz \
     && tar -xzf stockfish.tar.gz \
-    && mv stockfish/stockfish-ubuntu-x86-64-avx2 ./stockfish \
-    && rm -rf stockfish.tar.gz stockfish
+    && mv stockfish-ubuntu-x86-64-avx2 ./stockfish \
+    && rm -f stockfish.tar.gz
 
 # 📥 Download, unpack, and configure Fairy Stockfish 14.1
 RUN wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fairy_sf_14.1/fairy-stockfish-large-linux-x86-64.zip -O fairy.zip \
@@ -26,12 +25,12 @@ RUN wget https://github.com/fairy-stockfish/Fairy-Stockfish/releases/download/fa
 # 🔑 Grant execution rights to the engines
 RUN chmod +x ./stockfish ./fairy-stockfish
 
-# 🐍 Install your Python app libraries
+# 🐍 Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 📑 Copy your bot code files into the container
+# 📑 Copy bot code into the container
 COPY . .
 
-# 🚀 Execute the application process
+# 🚀 Execute the bot application
 CMD ["python", "bot.py"]
